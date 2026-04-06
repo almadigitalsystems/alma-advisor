@@ -1,0 +1,49 @@
+/**
+ * In-memory store for snapshots and alert history.
+ * Keeps last SNAPSHOT_HISTORY entries (default 1440 = 24h at 60s intervals).
+ */
+
+const MAX_SNAPSHOTS = parseInt(process.env.SNAPSHOT_HISTORY || '1440', 10);
+const MAX_ALERTS = 200;
+
+const snapshots = [];
+const alertHistory = [];
+let latestAnalysis = null;
+
+function addSnapshot(snapshot) {
+  snapshots.push(snapshot);
+  if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift();
+}
+
+function addAlerts(alerts, analysis) {
+  latestAnalysis = analysis;
+  for (const alert of alerts) {
+    alertHistory.unshift({ ...alert, firedAt: new Date().toISOString() });
+  }
+  if (alertHistory.length > MAX_ALERTS) alertHistory.length = MAX_ALERTS;
+}
+
+function getLatestSnapshot() {
+  return snapshots[snapshots.length - 1] || null;
+}
+
+function getSnapshots(count = 60) {
+  return snapshots.slice(-count);
+}
+
+function getAlertHistory(limit = 50) {
+  return alertHistory.slice(0, limit);
+}
+
+function getLatestAnalysis() {
+  return latestAnalysis;
+}
+
+module.exports = {
+  addSnapshot,
+  addAlerts,
+  getLatestSnapshot,
+  getSnapshots,
+  getAlertHistory,
+  getLatestAnalysis,
+};

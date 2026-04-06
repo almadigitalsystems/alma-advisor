@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alma Digital Designs — AI Advisor</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --critical: #dc2626;
+      --high: #ea580c;
+      --medium: #2563eb;
+      --positive: #16a34a;
+      --accent: #6366f1;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .logo { font-weight: 700; font-size: 18px; }
+    .logo span { color: var(--accent); }
+    #status-dot { width: 10px; height: 10px; border-radius: 50%; background: #374151; display: inline-block; margin-right: 8px; transition: background 0.3s; }
+    #status-dot.live { background: #16a34a; box-shadow: 0 0 8px #16a34a; }
+    #last-update { color: var(--muted); font-size: 13px; }
+
+    main { max-width: 1400px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 1fr 480px; gap: 24px; }
+    @media (max-width: 1024px) { main { grid-template-columns: 1fr; } }
+
+    .left { display: flex; flex-direction: column; gap: 24px; }
+    .right { display: flex; flex-direction: column; gap: 24px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .card h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 16px; }
+
+    /* Status summary */
+    #status-summary { font-size: 16px; line-height: 1.5; color: var(--text); padding: 12px; background: rgba(99,102,241,0.1); border: 1px solid var(--accent); border-radius: 8px; }
+
+    /* Metrics grid */
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .metric { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .metric-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .metric-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .metric.warn .metric-value { color: var(--high); }
+    .metric.danger .metric-value { color: var(--critical); }
+    .metric.good .metric-value { color: var(--positive); }
+
+    /* Alerts list */
+    .alert-item { border-left: 4px solid var(--border); padding: 12px 16px; margin-bottom: 10px; border-radius: 0 8px 8px 0; background: var(--bg); }
+    .alert-item.CRITICAL { border-color: var(--critical); }
+    .alert-item.HIGH { border-color: var(--high); }
+    .alert-item.MEDIUM { border-color: var(--medium); }
+    .alert-item.POSITIVE { border-color: var(--positive); }
+    .alert-priority { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+    .alert-priority.CRITICAL { color: var(--critical); }
+    .alert-priority.HIGH { color: var(--high); }
+    .alert-priority.MEDIUM { color: var(--medium); }
+    .alert-priority.POSITIVE { color: var(--positive); }
+    .alert-title { font-weight: 600; font-size: 14px; }
+    .alert-summary { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .alert-time { font-size: 11px; color: #475569; margin-top: 4px; }
+
+    /* Tasks table */
+    .task-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .task-row:last-child { border-bottom: none; }
+    .task-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+    .task-status.blocked { background: rgba(220,38,38,0.15); color: var(--critical); }
+    .task-status.in_progress { background: rgba(37,99,235,0.15); color: #60a5fa; }
+    .task-status.todo { background: rgba(148,163,184,0.1); color: var(--muted); }
+    .task-title { font-size: 13px; line-height: 1.4; flex: 1; }
+    .task-id { font-size: 11px; color: var(--muted); }
+
+    /* Chat */
+    #chat-messages { min-height: 400px; max-height: 550px; overflow-y: auto; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; gap: 12px; }
+    .chat-msg { padding: 10px 12px; border-radius: 8px; max-width: 90%; }
+    .chat-msg.user { background: var(--accent); align-self: flex-end; }
+    .chat-msg.assistant { background: var(--surface); border: 1px solid var(--border); align-self: flex-start; white-space: pre-wrap; position: relative; padding-bottom: 28px; }
+    .chat-msg.thinking { color: var(--muted); font-style: italic; }
+    .copy-btn { position: absolute; bottom: 6px; right: 8px; background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+    .copy-btn:hover { border-color: var(--accent); color: var(--text); }
+    .copy-btn.copied { color: var(--positive); border-color: var(--positive); }
+    .chat-input-row { display: flex; gap: 8px; align-items: flex-end; }
+    #chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 14px; outline: none; resize: vertical; min-height: 72px; font-family: inherit; line-height: 1.5; }
+    #chat-input:focus { border-color: var(--accent); }
+    #chat-send { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    #chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Agent list */
+    .agent-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .agent-row:last-child { border-bottom: none; }
+    .agent-name { flex: 1; font-weight: 500; }
+    .budget-bar { width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .budget-fill { height: 100%; border-radius: 3px; background: var(--positive); }
+    .budget-fill.warn { background: var(--high); }
+    .budget-fill.danger { background: var(--critical); }
+    .budget-pct { font-size: 11px; color: var(--muted); min-width: 32px; text-align: right; }
+
+    /* Sensitivity toggle */
+    .sensitivity-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .sens-btn { flex: 1; padding: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); border-radius: 6px; font-size: 12px; cursor: pointer; text-align: center; }
+    .sens-btn.active { border-color: var(--accent); color: var(--text); background: rgba(99,102,241,0.15); }
+
+    .empty-state { color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }
+    .new-alert-flash { animation: flash 1s; }
+    @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Alma <span>AI Advisor</span></div>
+  <div>
+    <span id="status-dot"></span>
+    <span id="last-update">Connecting...</span>
+  </div>
+</header>
+
+<main>
+  <div class="left">
+
+    <div class="card">
+      <h2>Company Status</h2>
+      <div id="status-summary">Waiting for first snapshot...</div>
+    </div>
+
+    <div class="card">
+      <h2>Live Metrics</h2>
+      <div class="metrics" id="metrics">
+        <div class="metric"><div class="metric-value" id="m-active">—</div><div class="metric-label">Active Tasks</div></div>
+        <div class="metric" id="m-blocked-card"><div class="metric-value" id="m-blocked">—</div><div class="metric-label">Blocked</div></div>
+        <div class="metric"><div class="metric-value" id="m-agents">—</div><div class="metric-label">Agents</div></div>
+        <div class="metric" id="m-budget-card"><div class="metric-value" id="m-overbudget">—</div><div class="metric-label">Over 80% Budget</div></div>
+        <div class="metric" id="m-board-card"><div class="metric-value" id="m-board-blockers">—</div><div class="metric-label">Board Blockers</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Active &amp; Blocked Tasks</h2>
+      <div id="tasks-list"><div class="empty-state">No data yet</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Agents — Budget Utilization</h2>
+      <div id="agents-list"><div class="empty-state">No data yet</div></div>
+    </div>
+
+  </div>
+
+  <div class="right">
+
+    <div class="card">
+      <h2>Ask Claude</h2>
+      <div id="chat-messages">
+        <div class="chat-msg assistant">Hi! I'm your AI advisor for Alma Digital Designs. Ask me anything about what's happening in the company right now.</div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" rows="3" placeholder="What's the CEO working on?" maxlength="500"></textarea>
+        <button id="chat-send">Ask</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Alert Sensitivity</h2>
+      <div class="sensitivity-row">
+        <div class="sens-btn" data-sens="all">All</div>
+        <div class="sens-btn active" data-sens="important">Important</div>
+        <div class="sens-btn" data-sens="critical">Critical only</div>
+      </div>
+      <h2>Recent Alerts</h2>
+      <div id="alerts-list"><div class="empty-state">No alerts yet — all systems normal</div></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const socket = io();
+let sensitivity = 'important';
+let chatHistory = [];
+
+// Connection status
+socket.on('connect', () => {
+  document.getElementById('status-dot').classList.add('live');
+  document.getElementById('last-update').textContent = 'Connected — waiting for data';
+});
+socket.on('disconnect', () => {
+  document.getElementById('status-dot').classList.remove('live');
+  document.getElementById('last-update').textContent = 'Disconnected';
+});
+
+// Receive company snapshot
+socket.on('snapshot', snapshot => {
+  updateLastUpdate();
+  updateMetrics(snapshot.summary || {});
+  updateTasks(snapshot.tasks || {});
+  updateAgents(snapshot.agents || []);
+});
+
+// Receive analysis update
+socket.on('analysis', analysis => {
+  if (analysis.statusSummary) {
+    document.getElementById('status-summary').textContent = analysis.statusSummary;
+  }
+});
+
+// Receive new alerts
+socket.on('alerts', alerts => {
+  if (!Array.isArray(alerts)) return;
+  const filtered = filterBySensitivity(alerts);
+  if (filtered.length > 0) renderAlerts(filtered, true);
+});
+
+function filterBySensitivity(alerts) {
+  const rank = { POSITIVE: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+  const min = { all: -1, important: 1, critical: 2 }[sensitivity] ?? 1;
+  return alerts.filter(a => (rank[a.priority] ?? 1) > min);
+}
+
+function updateLastUpdate() {
+  document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function updateMetrics(s) {
+  set('m-active', s.totalActiveTasks ?? '—');
+  set('m-blocked', s.blockedTasks ?? '—');
+  set('m-agents', s.totalAgents ?? '—');
+  set('m-overbudget', s.overBudgetAgents ?? '—');
+  set('m-board-blockers', s.boardBlockers ?? '—');
+
+  document.getElementById('m-blocked-card').className = 'metric' + (s.blockedTasks > 0 ? ' warn' : '');
+  document.getElementById('m-budget-card').className = 'metric' + (s.overBudgetAgents > 0 ? ' warn' : '');
+  document.getElementById('m-board-card').className = 'metric' + (s.boardBlockers > 0 ? ' danger' : '');
+}
+
+function updateTasks({ blocked = [], inProgress = [] }) {
+  const all = [...blocked, ...inProgress].slice(0, 20);
+  const el = document.getElementById('tasks-list');
+  if (!all.length) { el.innerHTML = '<div class="empty-state">No active tasks</div>'; return; }
+  el.innerHTML = all.map(t => `
+    <div class="task-row">
+      <span class="task-status ${t.status}">${t.status.replace('_', ' ')}</span>
+      <div>
+        <div class="task-title">${esc(t.title)}</div>
+        <div class="task-id">${esc(t.identifier || '')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateAgents(agents) {
+  const el = document.getElementById('agents-list');
+  if (!agents.length) { el.innerHTML = '<div class="empty-state">No agent data</div>'; return; }
+  const sorted = [...agents].sort((a, b) => b.budgetPct - a.budgetPct);
+  el.innerHTML = sorted.map(a => {
+    const cls = a.budgetPct >= 100 ? 'danger' : a.budgetPct >= 80 ? 'warn' : '';
+    return `
+      <div class="agent-row">
+        <div class="agent-name">${esc(a.name)}</div>
+        <div class="budget-bar"><div class="budget-fill ${cls}" style="width:${Math.min(a.budgetPct,100)}%"></div></div>
+        <div class="budget-pct">${a.budgetPct}%</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderAlerts(alerts, flash = false) {
+  const el = document.getElementById('alerts-list');
+  const items = alerts.map(a => `
+    <div class="alert-item ${a.priority}${flash ? ' new-alert-flash' : ''}">
+      <div class="alert-priority ${a.priority}">${a.priority}</div>
+      <div class="alert-title">${esc(a.title)}</div>
+      <div class="alert-summary">${esc(a.summary)}</div>
+      ${a.firedAt ? `<div class="alert-time">${new Date(a.firedAt).toLocaleString()}</div>` : ''}
+    </div>
+  `).join('');
+  el.innerHTML = items || '<div class="empty-state">No alerts</div>';
+}
+
+// Load initial state
+fetch('/api/state').then(r => r.json()).then(({ snapshot, analysis, alerts }) => {
+  if (snapshot) {
+    updateMetrics(snapshot.summary || {});
+    updateTasks(snapshot.tasks || {});
+    updateAgents(snapshot.agents || []);
+    updateLastUpdate();
+  }
+  if (analysis?.statusSummary) {
+    document.getElementById('status-summary').textContent = analysis.statusSummary;
+  }
+  if (alerts?.length) renderAlerts(alerts);
+}).catch(() => {});
+
+// Chat
+const chatInput = document.getElementById('chat-input');
+const chatSend = document.getElementById('chat-send');
+const chatMessages = document.getElementById('chat-messages');
+
+function appendMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  div.textContent = text;
+  if (role === 'assistant') {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
+    div.appendChild(btn);
+  }
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+async function sendChat() {
+  const q = chatInput.value.trim();
+  if (!q) return;
+  chatInput.value = '';
+  chatSend.disabled = true;
+
+  appendMessage('user', q);
+  const thinking = appendMessage('thinking', 'Claude is thinking...');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    });
+    const { answer, error } = await res.json();
+    thinking.remove();
+    appendMessage('assistant', answer || error || 'No response');
+  } catch {
+    thinking.remove();
+    appendMessage('assistant', 'Error connecting to Claude.');
+  } finally {
+    chatSend.disabled = false;
+    chatInput.focus();
+  }
+}
+
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+
+// Sensitivity toggle
+document.querySelectorAll('.sens-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sens-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    sensitivity = btn.dataset.sens;
+    fetch('/api/alerts').then(r => r.json()).then(alerts => renderAlerts(filterBySensitivity(alerts)));
+  });
+});
+
+function set(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

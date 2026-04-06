@@ -1,0 +1,25 @@
+{
+  "name": "alma-advisor",
+  "version": "1.0.0",
+  "description": "Fully autonomous real-time Claude AI advisor for Alma Digital Designs",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "monitor": "node monitor/index.js",
+    "dev:server": "node --watch server/index.js",
+    "dev:monitor": "node --watch monitor/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.10",
+    "socket.io": "^4.7.4",
+    "twilio": "^5.0.0",
+    "uuid": "^9.0.0"
+  }
+}
