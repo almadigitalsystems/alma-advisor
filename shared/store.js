@@ -1,5 +1,5 @@
 /**
- * In-memory store for snapshots and alert history.
+ * In-memory store for snapshots, alert history, and pending payment events.
  * Keeps last SNAPSHOT_HISTORY entries (default 1440 = 24h at 60s intervals).
  */
 
@@ -9,6 +9,7 @@ const MAX_ALERTS = 200;
 const snapshots = [];
 const alertHistory = [];
 let latestAnalysis = null;
+const pendingPayments = [];
 
 function addSnapshot(snapshot) {
   snapshots.push(snapshot);
@@ -39,6 +40,15 @@ function getLatestAnalysis() {
   return latestAnalysis;
 }
 
+function addPendingPayment(payment) {
+  pendingPayments.push(payment);
+  console.log('[store] Queued pending payment for:', payment.customerName);
+}
+
+function popPendingPayments() {
+  return pendingPayments.splice(0);
+}
+
 module.exports = {
   addSnapshot,
   addAlerts,
@@ -46,4 +56,6 @@ module.exports = {
   getSnapshots,
   getAlertHistory,
   getLatestAnalysis,
+  addPendingPayment,
+  popPendingPayments,
 };
